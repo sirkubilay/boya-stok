@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-brand-red: #CC0000;
+  --color-brand-dark: #111111;
+  --color-background: #F4F5F7;
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  background: #F4F5F7;
+  color: #111111;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Safe area for notched phones (bottom nav bar, notch) */
+main {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-red-700 hover:bg-red-800 active:bg-red-900 text-white font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer;
+  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg border border-gray-300 transition-colors cursor-pointer;
+  }
+  .btn-danger {
+    @apply bg-white hover:bg-red-50 text-red-600 font-medium px-3 py-1.5 rounded-lg border border-red-200 transition-colors cursor-pointer text-sm;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200;
+  }
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4;
+  }
+  .modal-box {
+    @apply bg-white rounded-2xl shadow-xl w-full max-w-md p-6;
+  }
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+  .form-input {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent;
+  }
+  .tab-btn {
+    @apply px-4 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer;
+  }
+  .tab-active {
+    @apply bg-black text-white;
+  }
+  .tab-inactive {
+    @apply bg-white text-gray-600 border border-gray-300 hover:bg-gray-50;
+  }
+}
