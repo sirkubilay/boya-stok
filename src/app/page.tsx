@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, query, orderBy
+  doc, setDoc, serverTimestamp, query, orderBy
 } from 'firebase/firestore'
 import { getDb } from '@/lib/firebase'
 import { subscribePaints, localAdd, localUpdate, localDelete } from '@/lib/localStore'
@@ -15,6 +15,18 @@ import AdjustModal from '@/components/AdjustModal'
 
 const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL === 'true'
 const TODAY = new Date().toISOString().split('T')[0]
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('tr-TR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }) + ', ' + d.toLocaleTimeString('tr-TR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   const colorMap: Record<string, string> = {
@@ -33,6 +45,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 export default function Home() {
   const [paints, setPaints] = useState<Paint[]>([])
   const [loading, setLoading] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState('')
   const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active')
   const [showAddModal, setShowAddModal] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
@@ -40,6 +53,8 @@ export default function Home() {
 
   useEffect(() => {
     if (USE_LOCAL) {
+      const saved = localStorage.getItem('boya-stok-last-op')
+      if (saved) setLastUpdated(saved)
       return subscribePaints((data) => {
         setPaints(data)
         setLoading(false)
@@ -47,7 +62,7 @@ export default function Home() {
     }
 
     const q = query(collection(getDb(), 'paints'), orderBy('name'))
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubPaints = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({
         id: d.id,
         ...d.data(),
@@ -57,8 +72,28 @@ export default function Home() {
       setPaints(data)
       setLoading(false)
     })
-    return unsubscribe
+
+    const unsubMeta = onSnapshot(doc(getDb(), 'meta', 'status'), (snap) => {
+      if (snap.exists()) {
+        const ts = snap.data().lastUpdated?.toDate?.()?.toISOString() ?? ''
+        if (ts) setLastUpdated(ts)
+      }
+    })
+
+    return () => { unsubPaints(); unsubMeta() }
   }, [])
+
+  async function recordUpdate() {
+    if (USE_LOCAL) {
+      const now = new Date().toISOString()
+      localStorage.setItem('boya-stok-last-op', now)
+      setLastUpdated(now)
+    } else {
+      await setDoc(doc(getDb(), 'meta', 'status'), {
+        lastUpdated: serverTimestamp(),
+      })
+    }
+  }
 
   const activePaints = paints.filter(p => !p.expiry_date || p.expiry_date >= TODAY)
   const expiredPaints = paints.filter(p => p.expiry_date && p.expiry_date < TODAY)
@@ -82,6 +117,7 @@ export default function Home() {
         updated_at: serverTimestamp(),
       })
     }
+    await recordUpdate()
     setShowAddModal(false)
   }
 
@@ -97,6 +133,7 @@ export default function Home() {
         updated_at: serverTimestamp(),
       })
     }
+    await recordUpdate()
     setAdjustTarget(null)
   }
 
@@ -107,6 +144,7 @@ export default function Home() {
     } else {
       await deleteDoc(doc(getDb(), 'paints', id))
     }
+    await recordUpdate()
   }
 
   return (
@@ -120,6 +158,18 @@ export default function Home() {
       )}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+
+        {/* Son güncelleme */}
+        {lastUpdated && (
+          <div className="flex items-center gap-2 mb-4 text-sm text-gray-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-gray-400">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>Son güncelleme: <strong className="text-gray-700">{formatDate(lastUpdated)}</strong></span>
+          </div>
+        )}
+
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           <StatCard label="Toplam Çeşit" value={paints.length} />
           <StatCard label="Yakın Tarihli" value={soonExpiring.length} color="yellow" />
