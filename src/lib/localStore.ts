@@ -1,44 +1,64 @@
-import type { Paint, NewPaint, PaintMeta } from './types'
-import { isSamePaint } from './types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType } from './types'
+import { isSameStock } from './types'
 
 const KEY = 'boya-stok-paints'
+const TYPES_KEY = 'boya-stok-types'
 const EVENT = 'boya-stok-update'
 
-function getAll(): Paint[] {
+function read<T>(key: string): T[] {
   if (typeof window === 'undefined') return []
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '[]')
+    return JSON.parse(localStorage.getItem(key) || '[]')
   } catch {
     return []
   }
 }
 
-function saveAll(paints: Paint[]) {
-  localStorage.setItem(KEY, JSON.stringify(paints))
+function write<T>(key: string, value: T[]) {
+  localStorage.setItem(key, JSON.stringify(value))
   window.dispatchEvent(new Event(EVENT))
 }
 
-function sorted(paints: Paint[]): Paint[] {
+const getAll = () => read<Paint>(KEY)
+const saveAll = (p: Paint[]) => write(KEY, p)
+const getTypes = () => read<PaintType>(TYPES_KEY)
+const saveTypes = (t: PaintType[]) => write(TYPES_KEY, t)
+
+function sortPaints(paints: Paint[]): Paint[] {
   return [...paints].sort((a, b) => {
     const brand = (a.brand || '').localeCompare(b.brand || '', 'tr')
     return brand !== 0 ? brand : a.name.localeCompare(b.name, 'tr')
   })
 }
 
+function sortTypes(types: PaintType[]): PaintType[] {
+  return [...types].sort((a, b) => {
+    const brand = (a.brand || '').localeCompare(b.brand || '', 'tr')
+    return brand !== 0 ? brand : a.name.localeCompare(b.name, 'tr')
+  })
+}
+
 export function subscribePaints(callback: (paints: Paint[]) => void): () => void {
-  const handler = () => callback(sorted(getAll()))
+  const handler = () => callback(sortPaints(getAll()))
+  window.addEventListener(EVENT, handler)
+  handler()
+  return () => window.removeEventListener(EVENT, handler)
+}
+
+export function subscribePaintTypes(callback: (types: PaintType[]) => void): () => void {
+  const handler = () => callback(sortTypes(getTypes()))
   window.addEventListener(EVENT, handler)
   handler()
   return () => window.removeEventListener(EVENT, handler)
 }
 
 /**
- * Stok girişi: aynı boya (marka+ad+SKT+renk) varsa miktarı üstüne ekler,
+ * Stok girişi: birleştirilebilir kayıt varsa miktarı üstüne ekler,
  * yoksa yeni kayıt açar.
  */
 export function localAdd(paint: NewPaint): void {
   const paints = getAll()
-  const match = paints.find(p => isSamePaint(p, paint))
+  const match = paints.find(p => isSameStock(p, paint))
   const now = new Date().toISOString()
   if (match) {
     match.quantity += paint.quantity
@@ -70,4 +90,18 @@ export function localEdit(id: string, fields: PaintMeta): void {
   saveAll(getAll().map(p =>
     p.id === id ? { ...p, ...fields, updated_at: new Date().toISOString() } : p
   ))
+}
+
+export function localAddType(type: NewPaintType): void {
+  const types = getTypes()
+  types.push({ ...type, id: crypto.randomUUID(), created_at: new Date().toISOString() })
+  saveTypes(types)
+}
+
+export function localEditType(id: string, fields: Partial<NewPaintType>): void {
+  saveTypes(getTypes().map(t => (t.id === id ? { ...t, ...fields } : t)))
+}
+
+export function localDeleteType(id: string): void {
+  saveTypes(getTypes().filter(t => t.id !== id))
 }

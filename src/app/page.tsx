@@ -6,15 +6,19 @@ import {
   doc, setDoc, serverTimestamp, query, orderBy, increment
 } from 'firebase/firestore'
 import { getDb } from '@/lib/firebase'
-import { subscribePaints, localAdd, localUpdate, localDelete, localEdit } from '@/lib/localStore'
-import { isSamePaint } from '@/lib/types'
-import type { Paint, NewPaint, PaintMeta } from '@/lib/types'
+import {
+  subscribePaints, subscribePaintTypes,
+  localAdd, localUpdate, localDelete, localEdit, localAddType, localDeleteType,
+} from '@/lib/localStore'
+import { isSameStock } from '@/lib/types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType } from '@/lib/types'
 import { brandLabel, groupByBrand, sortBrands } from '@/lib/brands'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
 import PaintTable from '@/components/PaintTable'
 import AddPaintModal from '@/components/AddPaintModal'
 import AdjustModal from '@/components/AdjustModal'
+import CatalogModal from '@/components/CatalogModal'
 
 const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL === 'true'
 const TODAY = new Date().toISOString().split('T')[0]
@@ -47,12 +51,14 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 
 export default function Home() {
   const [paints, setPaints] = useState<Paint[]>([])
+  const [types, setTypes] = useState<PaintType[]>([])
   const [firebaseError, setFirebaseError] = useState('')
   const [lastUpdated, setLastUpdated] = useState('')
   const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active')
   const [view, setView] = useState<'card' | 'table'>('card')
   const [brandFilter, setBrandFilter] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showCatalog, setShowCatalog] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
 
@@ -60,15 +66,16 @@ export default function Home() {
     if (USE_LOCAL) {
       const saved = localStorage.getItem('boya-stok-last-op')
       if (saved) setLastUpdated(saved)
-      return subscribePaints((data) => {
-        setPaints(data)
-      })
+      const unsubP = subscribePaints(setPaints)
+      const unsubT = subscribePaintTypes(setTypes)
+      return () => { unsubP(); unsubT() }
     }
 
     const q = query(collection(getDb(), 'paints'), orderBy('name'))
     const unsubPaints = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({
         id: d.id,
+        type_id: null,
         brand: '',
         ...d.data(),
         created_at: d.data().created_at?.toDate?.()?.toISOString() ?? '',
@@ -80,6 +87,18 @@ export default function Home() {
       setFirebaseError('Veriler okunamadı: ' + err.message)
     })
 
+    const unsubTypes = onSnapshot(
+      query(collection(getDb(), 'paint_types'), orderBy('name')),
+      (snapshot) => {
+        setTypes(snapshot.docs.map(d => ({
+          id: d.id,
+          color_code: null,
+          ...d.data(),
+          created_at: d.data().created_at?.toDate?.()?.toISOString() ?? '',
+        })) as PaintType[])
+      },
+    )
+
     const unsubMeta = onSnapshot(doc(getDb(), 'meta', 'status'), (snap) => {
       if (snap.exists()) {
         const ts = snap.data().lastUpdated?.toDate?.()?.toISOString() ?? ''
@@ -87,7 +106,7 @@ export default function Home() {
       }
     })
 
-    return () => { unsubPaints(); unsubMeta() }
+    return () => { unsubPaints(); unsubTypes(); unsubMeta() }
   }, [])
 
   async function recordUpdate() {
@@ -119,7 +138,7 @@ export default function Home() {
   const groups = groupByBrand(displayList)
 
   async function handleAddPaint(paint: NewPaint) {
-    const match = paints.find(p => isSamePaint(p, paint))
+    const match = paints.find(p => isSameStock(p, paint))
     if (USE_LOCAL) {
       localAdd(paint)
     } else {
@@ -185,6 +204,32 @@ export default function Home() {
       }
     }
     await recordUpdate()
+  }
+
+  async function handleAddType(type: NewPaintType) {
+    if (USE_LOCAL) {
+      localAddType(type)
+    } else {
+      try {
+        await addDoc(collection(getDb(), 'paint_types'), { ...type, created_at: serverTimestamp() })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('Boya tanımlanamadı: ' + msg)
+      }
+    }
+  }
+
+  async function handleDeleteType(id: string) {
+    if (USE_LOCAL) {
+      localDeleteType(id)
+    } else {
+      try {
+        await deleteDoc(doc(getDb(), 'paint_types', id))
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('Tanım silinemedi: ' + msg)
+      }
+    }
   }
 
   async function handleDelete(id: string) {
@@ -284,6 +329,9 @@ export default function Home() {
               Tablo
             </button>
           </div>
+          <button onClick={() => setShowCatalog(true)} className="btn-secondary text-sm">
+            Boya Tanımları ({types.length})
+          </button>
           <button onClick={() => setShowAddModal(true)} className="btn-primary">
             + Boya Ekle
           </button>
@@ -361,9 +409,19 @@ export default function Home() {
 
       {showAddModal && (
         <AddPaintModal
+          types={types}
           existingPaints={paints}
           onClose={() => setShowAddModal(false)}
           onAdd={handleAddPaint}
+          onManageCatalog={() => { setShowAddModal(false); setShowCatalog(true) }}
+        />
+      )}
+      {showCatalog && (
+        <CatalogModal
+          types={types}
+          onClose={() => setShowCatalog(false)}
+          onAdd={handleAddType}
+          onDelete={handleDeleteType}
         />
       )}
       {adjustTarget && (
