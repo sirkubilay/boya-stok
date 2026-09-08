@@ -403,7 +403,7 @@ export default function Home() {
                 ? '● çevrimdışı / önbellekten'
                 : '● sunucuya bağlı'}
           </span>
-          <span>sürüm 2026-09-08c</span>
+          <span>sürüm 2026-09-08d</span>
         </div>
       </div>
 

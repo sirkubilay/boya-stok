@@ -1,7 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import {
   initializeFirestore, getFirestore,
-  persistentLocalCache, persistentMultipleTabManager,
+  persistentLocalCache,
   type Firestore,
 } from 'firebase/firestore'
 
@@ -23,13 +23,13 @@ export function getDb(): Firestore {
   _app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
   try {
     _db = initializeFirestore(_app, {
-      // Kısıtlı/mobil ağlarda WebChannel akışı çalışmayabilir; long-polling'e düş
-      experimentalAutoDetectLongPolling: true,
-      // Yazmalar cihazda kalıcı kuyruğa alınır, bağlantı gelince eşitlenir (yenilemeye dayanır)
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      // Bazı ağlar/proxy'ler/eklentiler Firestore'un streaming (WebChannel) kanalını
+      // engelliyor; bu durumda SDK sessizce takılır. Long-polling'i zorlamak bunu aşar.
+      experimentalForceLongPolling: true,
+      // Yazmalar cihazda kalıcı kuyruğa alınır, bağlantı gelince eşitlenir.
+      localCache: persistentLocalCache(),
     })
   } catch {
-    // Zaten initialize edilmişse (HMR vb.) mevcut örneği al
     _db = getFirestore(_app)
   }
   return _db
