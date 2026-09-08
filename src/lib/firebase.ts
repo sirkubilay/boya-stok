@@ -1,5 +1,9 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
-import { getFirestore, type Firestore } from 'firebase/firestore'
+import {
+  initializeFirestore, getFirestore,
+  persistentLocalCache, persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -15,8 +19,17 @@ let _db: Firestore | undefined
 
 // Lazy init — only runs in the browser, never during SSR
 export function getDb(): Firestore {
-  if (!_db) {
-    _app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+  if (_db) return _db
+  _app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+  try {
+    _db = initializeFirestore(_app, {
+      // Kısıtlı/mobil ağlarda WebChannel akışı çalışmayabilir; long-polling'e düş
+      experimentalAutoDetectLongPolling: true,
+      // Yazmalar cihazda kalıcı kuyruğa alınır, bağlantı gelince eşitlenir (yenilemeye dayanır)
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    })
+  } catch {
+    // Zaten initialize edilmişse (HMR vb.) mevcut örneği al
     _db = getFirestore(_app)
   }
   return _db

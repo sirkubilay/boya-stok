@@ -61,6 +61,7 @@ export default function Home() {
   const [showCatalog, setShowCatalog] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
+  const [sync, setSync] = useState<{ fromCache: boolean; pending: boolean }>({ fromCache: true, pending: false })
 
   useEffect(() => {
     if (USE_LOCAL) {
@@ -72,7 +73,7 @@ export default function Home() {
     }
 
     const q = query(collection(getDb(), 'paints'), orderBy('name'))
-    const unsubPaints = onSnapshot(q, (snapshot) => {
+    const unsubPaints = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(d => ({
         id: d.id,
         type_id: null,
@@ -82,7 +83,8 @@ export default function Home() {
         updated_at: d.data().updated_at?.toDate?.()?.toISOString() ?? '',
       })) as Paint[]
       setPaints(data)
-      setFirebaseError('')
+      setSync({ fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites })
+      if (!snapshot.metadata.fromCache) setFirebaseError('')
     }, (err) => {
       setFirebaseError('Veriler okunamadı: ' + err.message)
     })
@@ -137,10 +139,18 @@ export default function Home() {
 
   const groups = groupByBrand(displayList)
 
-  // Firestore yazma işlemini sarar: hata olursa bannera yazar, alert gösterir, false döner
+  // Firestore yazma işlemini sarar. Hata olursa görünür uyarı verir + false döner.
+  // Çevrimdışıysa yazma cihazda kuyruğa alınır; 6 sn içinde ack gelmezse "kuyrukta" kabul edip devam ederiz.
   async function runWrite(label: string, fn: () => void | Promise<void>): Promise<boolean> {
     try {
-      await fn()
+      const QUEUED = Symbol('queued')
+      const res = await Promise.race([
+        Promise.resolve(fn()).then(() => 'ok' as const),
+        new Promise<typeof QUEUED>(r => setTimeout(() => r(QUEUED), 6000)),
+      ])
+      if (res === QUEUED) {
+        setFirebaseError('Bağlantı yavaş — kayıt cihaza alındı, internet gelince otomatik gönderilecek.')
+      }
       return true
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -381,6 +391,20 @@ export default function Home() {
             })}
           </div>
         )}
+
+        {/* Tanı satırı — sorun olursa buradaki bilgiyi ilet */}
+        <div className="mt-8 pt-4 border-t border-gray-200 text-[11px] text-gray-400 flex flex-wrap gap-x-3 gap-y-1">
+          <span>{USE_LOCAL ? '⚠ Demo modu (localStorage)' : 'Firebase modu'}</span>
+          <span>{types.length} tanım · {paints.length} stok kaydı</span>
+          <span>
+            {sync.pending
+              ? '↑ eşitlenmeyi bekleyen yazma var'
+              : sync.fromCache
+                ? '● çevrimdışı / önbellekten'
+                : '● sunucuya bağlı'}
+          </span>
+          <span>sürüm 2026-09-08c</span>
+        </div>
       </div>
 
       {showAddModal && (
