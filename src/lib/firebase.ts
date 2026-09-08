@@ -5,13 +5,16 @@ import {
   type Firestore,
 } from 'firebase/firestore'
 
+// Firebase web yapılandırması herkese açıktır (tarayıcıya gönderilir); güvenlik
+// Firestore kuralları ile sağlanır. Vercel ortam değişkenlerine görünmez BOM
+// karakteri sızdığı için değerler doğrudan burada tutuluyor.
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: 'AIzaSyCvHp8nlOafV6ZQN6HQERrFDjdhbx3KkCs',
+  authDomain: 'boya-stok-6da05.firebaseapp.com',
+  projectId: 'boya-stok-6da05',
+  storageBucket: 'boya-stok-6da05.firebasestorage.app',
+  messagingSenderId: '425396193364',
+  appId: '1:425396193364:web:7b4d48004697923de945c1',
 }
 
 let _app: FirebaseApp | undefined

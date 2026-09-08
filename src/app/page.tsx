@@ -20,7 +20,8 @@ import AddPaintModal from '@/components/AddPaintModal'
 import AdjustModal from '@/components/AdjustModal'
 import CatalogModal from '@/components/CatalogModal'
 
-const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL === 'true'
+// .trim() BOM/görünmez karakterleri de temizler
+const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL?.trim() === 'true'
 const TODAY = new Date().toISOString().split('T')[0]
 
 function formatDate(iso: string): string {
@@ -403,7 +404,7 @@ export default function Home() {
                 ? '● çevrimdışı / önbellekten'
                 : '● sunucuya bağlı'}
           </span>
-          <span>sürüm 2026-09-08d</span>
+          <span>sürüm 2026-09-08e</span>
         </div>
       </div>
 
