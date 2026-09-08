@@ -6,8 +6,8 @@ import type { Paint, PaintMeta } from '@/lib/types'
 interface Props {
   paint: Paint
   onClose: () => void
-  onAdjust: (id: string, delta: number) => Promise<void>
-  onEdit: (id: string, fields: PaintMeta) => Promise<void>
+  onAdjust: (id: string, delta: number) => Promise<boolean>
+  onEdit: (id: string, fields: PaintMeta) => Promise<boolean>
 }
 
 export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props) {
@@ -33,10 +33,13 @@ export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props)
     const meta: PaintMeta = {}
     if (name.trim() !== paint.name) meta.name = name.trim()
     if (brand.trim() !== (paint.brand || '')) meta.brand = brand.trim()
-    if (Object.keys(meta).length > 0) await onEdit(paint.id, meta)
+    let ok = true
+    if (Object.keys(meta).length > 0) ok = await onEdit(paint.id, meta)
     const delta = mode === 'add' ? parsed : -parsed
-    await onAdjust(paint.id, delta)
+    if (ok) ok = await onAdjust(paint.id, delta)
     setLoading(false)
+    if (ok) onClose()
+    else setError('Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.')
   }
 
   return (

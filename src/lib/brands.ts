@@ -14,6 +14,21 @@ export function brandLabel(b: string): string {
   return b?.trim() || 'Markasız'
 }
 
+export function isPinnedBrand(b: string): boolean {
+  return PINNED_BRANDS.some(x => x.toLocaleLowerCase('tr') === (b || '').trim().toLocaleLowerCase('tr'))
+}
+
+function fmtQty(n: number): string {
+  return n % 1 === 0 ? n.toLocaleString('tr-TR') : n.toFixed(1)
+}
+
+/** Birim bazında toplam metni: "120 litre · 5 kg" */
+export function totalsByUnit(items: Paint[]): string {
+  const map = new Map<string, number>()
+  for (const p of items) map.set(p.unit, (map.get(p.unit) || 0) + p.quantity)
+  return [...map.entries()].map(([u, q]) => `${fmtQty(q)} ${u}`).join(' · ')
+}
+
 export function sortBrands(list: string[]): string[] {
   return [...list].sort((a, b) => {
     const r = brandRank(a) - brandRank(b)

@@ -8,7 +8,7 @@ interface Props {
   types: PaintType[]
   existingPaints: Paint[]
   onClose: () => void
-  onAdd: (paint: NewPaint) => Promise<void>
+  onAdd: (paint: NewPaint) => Promise<boolean>
   onManageCatalog: () => void
 }
 
@@ -38,7 +38,7 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
     if (isNaN(qty) || qty <= 0) return setError('Geçerli bir miktar girin.')
 
     setLoading(true)
-    await onAdd({
+    const ok = await onAdd({
       type_id: selected.id,
       brand: selected.brand || '',
       name: selected.name,
@@ -49,7 +49,8 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
       notes: notes.trim() || null,
     })
     setLoading(false)
-    onClose()
+    if (ok) onClose()
+    else setError('Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.')
   }
 
   return (

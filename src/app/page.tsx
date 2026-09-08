@@ -12,7 +12,7 @@ import {
 } from '@/lib/localStore'
 import { isSameStock } from '@/lib/types'
 import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType } from '@/lib/types'
-import { brandLabel, groupByBrand, sortBrands } from '@/lib/brands'
+import { brandLabel, groupByBrand, sortBrands, isPinnedBrand, totalsByUnit } from '@/lib/brands'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
 import PaintTable from '@/components/PaintTable'
@@ -137,115 +137,84 @@ export default function Home() {
 
   const groups = groupByBrand(displayList)
 
-  async function handleAddPaint(paint: NewPaint) {
+  // Firestore yazma işlemini sarar: hata olursa bannera yazar, alert gösterir, false döner
+  async function runWrite(label: string, fn: () => void | Promise<void>): Promise<boolean> {
+    try {
+      await fn()
+      return true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const full = label + ': ' + msg
+      setFirebaseError(full)
+      if (typeof window !== 'undefined') window.alert(full)
+      return false
+    }
+  }
+
+  async function handleAddPaint(paint: NewPaint): Promise<boolean> {
     const match = paints.find(p => isSameStock(p, paint))
-    if (USE_LOCAL) {
-      localAdd(paint)
-    } else {
-      try {
-        if (match) {
-          await updateDoc(doc(getDb(), 'paints', match.id), {
-            quantity: increment(paint.quantity),
-            ...(paint.notes ? { notes: paint.notes } : {}),
-            updated_at: serverTimestamp(),
-          })
-        } else {
-          await addDoc(collection(getDb(), 'paints'), {
-            ...paint,
-            created_at: serverTimestamp(),
-            updated_at: serverTimestamp(),
-          })
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Boya kaydedilemedi: ' + msg)
-        return
+    const ok = await runWrite('Boya kaydedilemedi', async () => {
+      if (USE_LOCAL) return localAdd(paint)
+      if (match) {
+        await updateDoc(doc(getDb(), 'paints', match.id), {
+          quantity: increment(paint.quantity),
+          ...(paint.notes ? { notes: paint.notes } : {}),
+          updated_at: serverTimestamp(),
+        })
+      } else {
+        await addDoc(collection(getDb(), 'paints'), {
+          ...paint,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
       }
-    }
-    await recordUpdate()
-    setShowAddModal(false)
+    })
+    if (ok) await recordUpdate()
+    return ok
   }
 
-  async function handleAdjust(id: string, delta: number) {
+  async function handleAdjust(id: string, delta: number): Promise<boolean> {
     const paint = paints.find(p => p.id === id)
-    if (!paint) return
+    if (!paint) return false
     const newQty = Math.max(0, paint.quantity + delta)
-    if (USE_LOCAL) {
-      localUpdate(id, newQty)
-    } else {
-      try {
-        await updateDoc(doc(getDb(), 'paints', id), {
-          quantity: newQty,
-          updated_at: serverTimestamp(),
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Miktar güncellenemedi: ' + msg)
-        return
-      }
-    }
-    await recordUpdate()
-    setAdjustTarget(null)
+    const ok = await runWrite('Miktar güncellenemedi', async () => {
+      if (USE_LOCAL) return localUpdate(id, newQty)
+      await updateDoc(doc(getDb(), 'paints', id), { quantity: newQty, updated_at: serverTimestamp() })
+    })
+    if (ok) await recordUpdate()
+    return ok
   }
 
-  async function handleEditMeta(id: string, fields: PaintMeta) {
-    if (USE_LOCAL) {
-      localEdit(id, fields)
-    } else {
-      try {
-        await updateDoc(doc(getDb(), 'paints', id), {
-          ...fields,
-          updated_at: serverTimestamp(),
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Bilgiler güncellenemedi: ' + msg)
-        return
-      }
-    }
-    await recordUpdate()
+  async function handleEditMeta(id: string, fields: PaintMeta): Promise<boolean> {
+    const ok = await runWrite('Bilgiler güncellenemedi', async () => {
+      if (USE_LOCAL) return localEdit(id, fields)
+      await updateDoc(doc(getDb(), 'paints', id), { ...fields, updated_at: serverTimestamp() })
+    })
+    if (ok) await recordUpdate()
+    return ok
   }
 
-  async function handleAddType(type: NewPaintType) {
-    if (USE_LOCAL) {
-      localAddType(type)
-    } else {
-      try {
-        await addDoc(collection(getDb(), 'paint_types'), { ...type, created_at: serverTimestamp() })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Boya tanımlanamadı: ' + msg)
-      }
-    }
+  async function handleAddType(type: NewPaintType): Promise<boolean> {
+    return runWrite('Boya tanımlanamadı', async () => {
+      if (USE_LOCAL) return localAddType(type)
+      await addDoc(collection(getDb(), 'paint_types'), { ...type, created_at: serverTimestamp() })
+    })
   }
 
-  async function handleDeleteType(id: string) {
-    if (USE_LOCAL) {
-      localDeleteType(id)
-    } else {
-      try {
-        await deleteDoc(doc(getDb(), 'paint_types', id))
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Tanım silinemedi: ' + msg)
-      }
-    }
+  async function handleDeleteType(id: string): Promise<boolean> {
+    return runWrite('Tanım silinemedi', async () => {
+      if (USE_LOCAL) return localDeleteType(id)
+      await deleteDoc(doc(getDb(), 'paint_types', id))
+    })
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Bu boyayı silmek istediğinizden emin misiniz?')) return
-    if (USE_LOCAL) {
-      localDelete(id)
-    } else {
-      try {
-        await deleteDoc(doc(getDb(), 'paints', id))
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('Boya silinemedi: ' + msg)
-        return
-      }
-    }
-    await recordUpdate()
+    const ok = await runWrite('Boya silinemedi', async () => {
+      if (USE_LOCAL) return localDelete(id)
+      await deleteDoc(doc(getDb(), 'paints', id))
+    })
+    if (ok) await recordUpdate()
   }
 
   return (
@@ -259,8 +228,10 @@ export default function Home() {
       )}
 
       {firebaseError && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-center text-xs text-red-700">
-          <strong>Hata:</strong> {firebaseError}
+        <div className="sticky top-0 z-50 bg-red-600 text-white px-4 py-2.5 flex items-start gap-2 text-sm shadow">
+          <span className="font-bold shrink-0">Hata:</span>
+          <span className="flex-1 break-words">{firebaseError}</span>
+          <button onClick={() => setFirebaseError('')} className="shrink-0 text-white/80 hover:text-white text-lg leading-none cursor-pointer">×</button>
         </div>
       )}
 
@@ -381,28 +352,33 @@ export default function Home() {
             onRowClick={setAdjustTarget}
           />
         ) : (
-          <div className="flex flex-col gap-6">
-            {groups.map(({ brand, items }) => (
-              <section key={brand || '—'}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{brandLabel(brand)}</h2>
-                  <span className="text-xs text-gray-400">
-                    {items.length} çeşit · {items.reduce((s, p) => s + p.quantity, 0).toLocaleString('tr-TR')} toplam
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {items.map(paint => (
-                    <PaintCard
-                      key={paint.id}
-                      paint={paint}
-                      expired={activeTab === 'expired'}
-                      onAdjust={() => setAdjustTarget(paint)}
-                      onDelete={() => handleDelete(paint.id)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+          <div className="flex flex-col gap-5">
+            {groups.map(({ brand, items }) => {
+              const pinned = isPinnedBrand(brand)
+              const unitTotals = totalsByUnit(items)
+              return (
+                <section key={brand || '—'} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                  <div className={`flex items-center justify-between px-4 py-2.5 text-white ${pinned ? 'bg-red-700' : 'bg-gray-900'}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-bold uppercase tracking-wider truncate">{brandLabel(brand)}</span>
+                      <span className="text-[11px] text-white/60 shrink-0">{items.length} çeşit</span>
+                    </div>
+                    <span className="text-xs font-semibold text-white/90 shrink-0">{unitTotals}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-gray-50">
+                    {items.map(paint => (
+                      <PaintCard
+                        key={paint.id}
+                        paint={paint}
+                        expired={activeTab === 'expired'}
+                        onAdjust={() => setAdjustTarget(paint)}
+                        onDelete={() => handleDelete(paint.id)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )
+            })}
           </div>
         )}
       </div>

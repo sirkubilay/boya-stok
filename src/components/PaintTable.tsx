@@ -1,6 +1,7 @@
 'use client'
 
 import type { Paint } from '@/lib/types'
+import { totalsByUnit, isPinnedBrand } from '@/lib/brands'
 
 interface Props {
   groups: { brand: string; items: Paint[] }[]
@@ -10,13 +11,6 @@ interface Props {
 
 function fmtQty(n: number): string {
   return n % 1 === 0 ? n.toLocaleString('tr-TR') : n.toFixed(1)
-}
-
-/** Birim bazında toplam: "120 litre · 5 kg" */
-function totalsByUnit(items: Paint[]): string {
-  const map = new Map<string, number>()
-  for (const p of items) map.set(p.unit, (map.get(p.unit) || 0) + p.quantity)
-  return [...map.entries()].map(([u, q]) => `${fmtQty(q)} ${u}`).join(' · ')
 }
 
 export default function PaintTable({ groups, expired, onRowClick }: Props) {
@@ -34,12 +28,13 @@ export default function PaintTable({ groups, expired, onRowClick }: Props) {
           </tr>
         </thead>
         {groups.map(({ brand, items }) => (
-          <tbody key={brand || '—'} className="border-b border-gray-100 last:border-0">
-            <tr className="bg-gray-50">
-              <td colSpan={3} className="px-4 py-2 font-bold text-gray-900 uppercase text-xs tracking-wide">
+          <tbody key={brand || '—'} className="border-b-4 border-white last:border-0">
+            <tr className={isPinnedBrand(brand) ? 'bg-red-700 text-white' : 'bg-gray-900 text-white'}>
+              <td colSpan={3} className="px-4 py-2 font-bold uppercase text-xs tracking-wider">
                 {brand?.trim() || 'Markasız'}
+                <span className="ml-2 font-normal text-white/60">{items.length} çeşit</span>
               </td>
-              <td className="px-4 py-2 text-right text-xs font-semibold text-gray-600 whitespace-nowrap">
+              <td className="px-4 py-2 text-right text-xs font-semibold whitespace-nowrap">
                 {totalsByUnit(items)}
               </td>
             </tr>
