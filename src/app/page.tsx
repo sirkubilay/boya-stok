@@ -3,13 +3,16 @@
 import { useState, useEffect } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, query, orderBy
+  doc, setDoc, serverTimestamp, query, orderBy, increment
 } from 'firebase/firestore'
 import { getDb } from '@/lib/firebase'
-import { subscribePaints, localAdd, localUpdate, localDelete, localRename } from '@/lib/localStore'
-import type { Paint, NewPaint } from '@/lib/types'
+import { subscribePaints, localAdd, localUpdate, localDelete, localEdit } from '@/lib/localStore'
+import { isSamePaint } from '@/lib/types'
+import type { Paint, NewPaint, PaintMeta } from '@/lib/types'
+import { brandLabel, groupByBrand, sortBrands } from '@/lib/brands'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
+import PaintTable from '@/components/PaintTable'
 import AddPaintModal from '@/components/AddPaintModal'
 import AdjustModal from '@/components/AdjustModal'
 
@@ -47,6 +50,8 @@ export default function Home() {
   const [firebaseError, setFirebaseError] = useState('')
   const [lastUpdated, setLastUpdated] = useState('')
   const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active')
+  const [view, setView] = useState<'card' | 'table'>('card')
+  const [brandFilter, setBrandFilter] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
@@ -64,6 +69,7 @@ export default function Home() {
     const unsubPaints = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({
         id: d.id,
+        brand: '',
         ...d.data(),
         created_at: d.data().created_at?.toDate?.()?.toISOString() ?? '',
         updated_at: d.data().updated_at?.toDate?.()?.toISOString() ?? '',
@@ -104,20 +110,33 @@ export default function Home() {
     return days <= 30
   })
 
-  const displayList = (activeTab === 'active' ? activePaints : expiredPaints).filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  )
+  const brands = sortBrands([...new Set(paints.map(p => p.brand?.trim() || '').filter(Boolean))])
+
+  const displayList = (activeTab === 'active' ? activePaints : expiredPaints)
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(p => !brandFilter || (p.brand?.trim() || '') === brandFilter)
+
+  const groups = groupByBrand(displayList)
 
   async function handleAddPaint(paint: NewPaint) {
+    const match = paints.find(p => isSamePaint(p, paint))
     if (USE_LOCAL) {
       localAdd(paint)
     } else {
       try {
-        await addDoc(collection(getDb(), 'paints'), {
-          ...paint,
-          created_at: serverTimestamp(),
-          updated_at: serverTimestamp(),
-        })
+        if (match) {
+          await updateDoc(doc(getDb(), 'paints', match.id), {
+            quantity: increment(paint.quantity),
+            ...(paint.notes ? { notes: paint.notes } : {}),
+            updated_at: serverTimestamp(),
+          })
+        } else {
+          await addDoc(collection(getDb(), 'paints'), {
+            ...paint,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          })
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         setFirebaseError('Boya kaydedilemedi: ' + msg)
@@ -150,18 +169,18 @@ export default function Home() {
     setAdjustTarget(null)
   }
 
-  async function handleRename(id: string, name: string) {
+  async function handleEditMeta(id: string, fields: PaintMeta) {
     if (USE_LOCAL) {
-      localRename(id, name)
+      localEdit(id, fields)
     } else {
       try {
         await updateDoc(doc(getDb(), 'paints', id), {
-          name,
+          ...fields,
           updated_at: serverTimestamp(),
         })
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
-        setFirebaseError('İsim güncellenemedi: ' + msg)
+        setFirebaseError('Bilgiler güncellenemedi: ' + msg)
         return
       }
     }
@@ -229,7 +248,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 mb-4 items-center">
+        <div className="flex flex-wrap gap-2 mb-3 items-center">
           <button
             onClick={() => setActiveTab('active')}
             className={`tab-btn ${activeTab === 'active' ? 'tab-active' : 'tab-inactive'}`}
@@ -249,16 +268,53 @@ export default function Home() {
             onChange={e => setSearch(e.target.value)}
             className="form-input max-w-44 text-sm"
           />
-          <button onClick={() => setShowAddModal(true)} className="btn-primary ml-auto">
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden ml-auto">
+            <button
+              onClick={() => setView('card')}
+              className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${view === 'card' ? 'bg-black text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              aria-label="Kart görünümü"
+            >
+              Kart
+            </button>
+            <button
+              onClick={() => setView('table')}
+              className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${view === 'table' ? 'bg-black text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              aria-label="Tablo görünümü"
+            >
+              Tablo
+            </button>
+          </div>
+          <button onClick={() => setShowAddModal(true)} className="btn-primary">
             + Boya Ekle
           </button>
         </div>
 
+        {/* Marka filtresi */}
+        {brands.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setBrandFilter('')}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${brandFilter === '' ? 'bg-red-700 text-white' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
+            >
+              Tüm markalar
+            </button>
+            {brands.map(b => (
+              <button
+                key={b}
+                onClick={() => setBrandFilter(b)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${brandFilter === b ? 'bg-red-700 text-white' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
+              >
+                {b}
+              </button>
+            ))}
+          </div>
+        )}
+
         {displayList.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">🎨</div>
-            {search ? (
-              <p>&quot;{search}&quot; için sonuç bulunamadı.</p>
+            {search || brandFilter ? (
+              <p>Sonuç bulunamadı.</p>
             ) : activeTab === 'active' ? (
               <p>
                 Henüz boya eklenmemiş.{' '}
@@ -270,30 +326,52 @@ export default function Home() {
               <p>Süresi geçmiş boya yok.</p>
             )}
           </div>
+        ) : view === 'table' ? (
+          <PaintTable
+            groups={groups}
+            expired={activeTab === 'expired'}
+            onRowClick={setAdjustTarget}
+          />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {displayList.map(paint => (
-              <PaintCard
-                key={paint.id}
-                paint={paint}
-                expired={activeTab === 'expired'}
-                onAdjust={() => setAdjustTarget(paint)}
-                onDelete={() => handleDelete(paint.id)}
-              />
+          <div className="flex flex-col gap-6">
+            {groups.map(({ brand, items }) => (
+              <section key={brand || '—'}>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{brandLabel(brand)}</h2>
+                  <span className="text-xs text-gray-400">
+                    {items.length} çeşit · {items.reduce((s, p) => s + p.quantity, 0).toLocaleString('tr-TR')} toplam
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {items.map(paint => (
+                    <PaintCard
+                      key={paint.id}
+                      paint={paint}
+                      expired={activeTab === 'expired'}
+                      onAdjust={() => setAdjustTarget(paint)}
+                      onDelete={() => handleDelete(paint.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
       </div>
 
       {showAddModal && (
-        <AddPaintModal onClose={() => setShowAddModal(false)} onAdd={handleAddPaint} />
+        <AddPaintModal
+          existingPaints={paints}
+          onClose={() => setShowAddModal(false)}
+          onAdd={handleAddPaint}
+        />
       )}
       {adjustTarget && (
         <AdjustModal
           paint={adjustTarget}
           onClose={() => setAdjustTarget(null)}
           onAdjust={handleAdjust}
-          onRename={handleRename}
+          onEdit={handleEditMeta}
         />
       )}
     </main>

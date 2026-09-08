@@ -52,13 +52,21 @@ export default function PaintCard({ paint, onAdjust, onDelete, expired }: Props)
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          {paint.color_code && (
+          {paint.color_code && paint.color_code.startsWith('#') && (
             <div
               className="w-6 h-6 rounded-full shrink-0 border-2 border-white shadow"
               style={{ backgroundColor: paint.color_code }}
             />
           )}
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug">{paint.name}</h3>
+          <div className="min-w-0">
+            {paint.brand && (
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 leading-tight">{paint.brand}</p>
+            )}
+            <h3 className="font-semibold text-gray-900 text-sm leading-snug">{paint.name}</h3>
+            {paint.color_code && !paint.color_code.startsWith('#') && (
+              <p className="text-[11px] text-gray-400 leading-tight">{paint.color_code}</p>
+            )}
+          </div>
         </div>
         {/* Delete — minimum 44x44 touch target */}
         <button

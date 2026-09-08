@@ -1,19 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import type { Paint } from '@/lib/types'
+import type { Paint, PaintMeta } from '@/lib/types'
 
 interface Props {
   paint: Paint
   onClose: () => void
   onAdjust: (id: string, delta: number) => Promise<void>
-  onRename: (id: string, name: string) => Promise<void>
+  onEdit: (id: string, fields: PaintMeta) => Promise<void>
 }
 
-export default function AdjustModal({ paint, onClose, onAdjust, onRename }: Props) {
+export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props) {
   const [mode, setMode] = useState<'add' | 'remove'>('add')
   const [amount, setAmount] = useState('')
   const [name, setName] = useState(paint.name)
+  const [brand, setBrand] = useState(paint.brand || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -29,7 +30,10 @@ export default function AdjustModal({ paint, onClose, onAdjust, onRename }: Prop
     if (mode === 'remove' && parsed > paint.quantity) return setError(`Maksimum ${paint.quantity} ${paint.unit} çıkarabilirsiniz.`)
 
     setLoading(true)
-    if (name.trim() !== paint.name) await onRename(paint.id, name.trim())
+    const meta: PaintMeta = {}
+    if (name.trim() !== paint.name) meta.name = name.trim()
+    if (brand.trim() !== (paint.brand || '')) meta.brand = brand.trim()
+    if (Object.keys(meta).length > 0) await onEdit(paint.id, meta)
     const delta = mode === 'add' ? parsed : -parsed
     await onAdjust(paint.id, delta)
     setLoading(false)
@@ -37,20 +41,38 @@ export default function AdjustModal({ paint, onClose, onAdjust, onRename }: Prop
 
   return (
     <div className="modal-overlay items-end sm:items-center" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal-box w-full rounded-b-none sm:rounded-2xl">
+      <div className="modal-box w-full rounded-b-none sm:rounded-2xl max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-bold text-gray-900">Stok Güncelle</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none cursor-pointer">×</button>
         </div>
 
-        <div className="mb-4">
-          <label className="form-label">Boya Adı</label>
-          <input
-            className="form-input"
-            value={name}
-            onChange={e => { setName(e.target.value); setError('') }}
-          />
+        <div className="flex gap-3 mb-4">
+          <div className="w-32">
+            <label className="form-label">Marka</label>
+            <input
+              className="form-input"
+              value={brand}
+              onChange={e => { setBrand(e.target.value); setError('') }}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="form-label">Boya Adı</label>
+            <input
+              className="form-input"
+              value={name}
+              onChange={e => { setName(e.target.value); setError('') }}
+            />
+          </div>
         </div>
+
+        {(paint.color_code || paint.expiry_date) && (
+          <p className="text-xs text-gray-400 mb-3">
+            {paint.color_code && <>Renk: {paint.color_code}</>}
+            {paint.color_code && paint.expiry_date && ' · '}
+            {paint.expiry_date && <>SKT: {new Date(paint.expiry_date).toLocaleDateString('tr-TR')}</>}
+          </p>
+        )}
 
         <div className="bg-gray-50 rounded-xl p-3 mb-4 flex items-center justify-between">
           <span className="text-sm text-gray-600">Mevcut stok</span>
