@@ -7,11 +7,13 @@ interface Props {
   paint: Paint
   onClose: () => void
   onAdjust: (id: string, delta: number) => Promise<void>
+  onRename: (id: string, name: string) => Promise<void>
 }
 
-export default function AdjustModal({ paint, onClose, onAdjust }: Props) {
+export default function AdjustModal({ paint, onClose, onAdjust, onRename }: Props) {
   const [mode, setMode] = useState<'add' | 'remove'>('add')
   const [amount, setAmount] = useState('')
+  const [name, setName] = useState(paint.name)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -22,10 +24,12 @@ export default function AdjustModal({ paint, onClose, onAdjust }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!name.trim()) return setError('Boya adı boş olamaz.')
     if (isNaN(parsed) || parsed <= 0) return setError('Geçerli bir miktar girin.')
     if (mode === 'remove' && parsed > paint.quantity) return setError(`Maksimum ${paint.quantity} ${paint.unit} çıkarabilirsiniz.`)
 
     setLoading(true)
+    if (name.trim() !== paint.name) await onRename(paint.id, name.trim())
     const delta = mode === 'add' ? parsed : -parsed
     await onAdjust(paint.id, delta)
     setLoading(false)
@@ -39,7 +43,14 @@ export default function AdjustModal({ paint, onClose, onAdjust }: Props) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none cursor-pointer">×</button>
         </div>
 
-        <p className="text-sm text-gray-500 mb-4">{paint.name}</p>
+        <div className="mb-4">
+          <label className="form-label">Boya Adı</label>
+          <input
+            className="form-input"
+            value={name}
+            onChange={e => { setName(e.target.value); setError('') }}
+          />
+        </div>
 
         <div className="bg-gray-50 rounded-xl p-3 mb-4 flex items-center justify-between">
           <span className="text-sm text-gray-600">Mevcut stok</span>

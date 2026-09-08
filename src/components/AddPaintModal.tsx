@@ -43,6 +43,7 @@ export default function AddPaintModal({ onClose, onAdd }: Props) {
       notes: form.notes.trim() || null,
     })
     setLoading(false)
+    onClose()
   }
 
   return (

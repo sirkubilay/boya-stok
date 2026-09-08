@@ -48,3 +48,9 @@ export function localUpdate(id: string, quantity: number): void {
 export function localDelete(id: string): void {
   saveAll(getAll().filter(p => p.id !== id))
 }
+
+export function localRename(id: string, name: string): void {
+  saveAll(getAll().map(p =>
+    p.id === id ? { ...p, name, updated_at: new Date().toISOString() } : p
+  ))
+}

@@ -6,7 +6,7 @@ import {
   doc, setDoc, serverTimestamp, query, orderBy
 } from 'firebase/firestore'
 import { getDb } from '@/lib/firebase'
-import { subscribePaints, localAdd, localUpdate, localDelete } from '@/lib/localStore'
+import { subscribePaints, localAdd, localUpdate, localDelete, localRename } from '@/lib/localStore'
 import type { Paint, NewPaint } from '@/lib/types'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
@@ -44,7 +44,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 
 export default function Home() {
   const [paints, setPaints] = useState<Paint[]>([])
-  const [loading, setLoading] = useState(true)
+  const [firebaseError, setFirebaseError] = useState('')
   const [lastUpdated, setLastUpdated] = useState('')
   const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active')
   const [showAddModal, setShowAddModal] = useState(false)
@@ -57,7 +57,6 @@ export default function Home() {
       if (saved) setLastUpdated(saved)
       return subscribePaints((data) => {
         setPaints(data)
-        setLoading(false)
       })
     }
 
@@ -70,7 +69,9 @@ export default function Home() {
         updated_at: d.data().updated_at?.toDate?.()?.toISOString() ?? '',
       })) as Paint[]
       setPaints(data)
-      setLoading(false)
+      setFirebaseError('')
+    }, (err) => {
+      setFirebaseError('Veriler okunamadı: ' + err.message)
     })
 
     const unsubMeta = onSnapshot(doc(getDb(), 'meta', 'status'), (snap) => {
@@ -111,11 +112,17 @@ export default function Home() {
     if (USE_LOCAL) {
       localAdd(paint)
     } else {
-      await addDoc(collection(getDb(), 'paints'), {
-        ...paint,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
-      })
+      try {
+        await addDoc(collection(getDb(), 'paints'), {
+          ...paint,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('Boya kaydedilemedi: ' + msg)
+        return
+      }
     }
     await recordUpdate()
     setShowAddModal(false)
@@ -128,13 +135,37 @@ export default function Home() {
     if (USE_LOCAL) {
       localUpdate(id, newQty)
     } else {
-      await updateDoc(doc(getDb(), 'paints', id), {
-        quantity: newQty,
-        updated_at: serverTimestamp(),
-      })
+      try {
+        await updateDoc(doc(getDb(), 'paints', id), {
+          quantity: newQty,
+          updated_at: serverTimestamp(),
+        })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('Miktar güncellenemedi: ' + msg)
+        return
+      }
     }
     await recordUpdate()
     setAdjustTarget(null)
+  }
+
+  async function handleRename(id: string, name: string) {
+    if (USE_LOCAL) {
+      localRename(id, name)
+    } else {
+      try {
+        await updateDoc(doc(getDb(), 'paints', id), {
+          name,
+          updated_at: serverTimestamp(),
+        })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('İsim güncellenemedi: ' + msg)
+        return
+      }
+    }
+    await recordUpdate()
   }
 
   async function handleDelete(id: string) {
@@ -142,7 +173,13 @@ export default function Home() {
     if (USE_LOCAL) {
       localDelete(id)
     } else {
-      await deleteDoc(doc(getDb(), 'paints', id))
+      try {
+        await deleteDoc(doc(getDb(), 'paints', id))
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setFirebaseError('Boya silinemedi: ' + msg)
+        return
+      }
     }
     await recordUpdate()
   }
@@ -154,6 +191,12 @@ export default function Home() {
       {USE_LOCAL && (
         <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-center text-xs text-blue-700">
           Demo modu — veriler bu tarayıcıda saklanıyor.
+        </div>
+      )}
+
+      {firebaseError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-center text-xs text-red-700">
+          <strong>Hata:</strong> {firebaseError}
         </div>
       )}
 
@@ -211,12 +254,7 @@ export default function Home() {
           </button>
         </div>
 
-        {loading ? (
-          <div className="text-center py-16">
-            <div className="inline-block w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-500 mt-3 text-sm">Yükleniyor...</p>
-          </div>
-        ) : displayList.length === 0 ? (
+        {displayList.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">🎨</div>
             {search ? (
@@ -255,6 +293,7 @@ export default function Home() {
           paint={adjustTarget}
           onClose={() => setAdjustTarget(null)}
           onAdjust={handleAdjust}
+          onRename={handleRename}
         />
       )}
     </main>
