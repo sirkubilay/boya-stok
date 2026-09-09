@@ -104,7 +104,14 @@ export default function PaintCard({ paint, onAdjust, onDelete, expired }: Props)
         <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 line-clamp-1">{paint.notes}</p>
       )}
 
-      <ExpiryBadge expiry_date={paint.expiry_date} />
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <ExpiryBadge expiry_date={paint.expiry_date} />
+        {paint.project && (
+          <span className="text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-1 truncate max-w-full">
+            📁 {paint.project}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

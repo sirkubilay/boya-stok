@@ -18,6 +18,7 @@ export interface Paint {
   expiry_date: string | null
   color_code: string | null
   notes: string | null
+  project: string | null
   created_at: string
   updated_at: string
 }
@@ -48,11 +49,12 @@ const norm = (s: string | null | undefined) => (s ?? '').trim().toLocaleLowerCas
  * type_id yoksa (eski kayıt) marka+ad+renk üzerinden kıyaslanır.
  */
 export function isSameStock(
-  a: Pick<Paint, 'type_id' | 'brand' | 'name' | 'expiry_date' | 'color_code' | 'unit'>,
-  b: Pick<Paint, 'type_id' | 'brand' | 'name' | 'expiry_date' | 'color_code' | 'unit'>,
+  a: Pick<Paint, 'type_id' | 'brand' | 'name' | 'expiry_date' | 'color_code' | 'unit' | 'project'>,
+  b: Pick<Paint, 'type_id' | 'brand' | 'name' | 'expiry_date' | 'color_code' | 'unit' | 'project'>,
 ): boolean {
   if ((a.expiry_date ?? '') !== (b.expiry_date ?? '')) return false
   if (norm(a.unit) !== norm(b.unit)) return false
+  if (norm(a.project) !== norm(b.project)) return false
   if (a.type_id && b.type_id) return a.type_id === b.type_id
   return (
     norm(a.brand) === norm(b.brand) &&

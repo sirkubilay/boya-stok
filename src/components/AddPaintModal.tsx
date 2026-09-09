@@ -19,6 +19,7 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState('litre')
   const [expiry, setExpiry] = useState('')
+  const [project, setProject] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -26,9 +27,15 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
   const groups = useMemo(() => groupTypesByBrand(types), [types])
   const selected = types.find(t => t.id === typeId) || null
 
-  // Seçili boya + aynı SKT + aynı birimde mevcut stok
+  const existingProjects = useMemo(
+    () => [...new Set(existingPaints.map(p => p.project?.trim()).filter(Boolean))].sort((a, b) => a!.localeCompare(b!, 'tr')),
+    [existingPaints]
+  )
+
+  // Seçili boya + aynı SKT + aynı birim + aynı proje adında mevcut stok
   const matching = existingPaints.find(
-    p => p.type_id === typeId && (p.expiry_date ?? '') === (expiry || '') && p.unit === unit
+    p => p.type_id === typeId && (p.expiry_date ?? '') === (expiry || '') && p.unit === unit &&
+      (p.project?.trim().toLocaleLowerCase('tr') || '') === project.trim().toLocaleLowerCase('tr')
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -46,6 +53,7 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
       unit,
       expiry_date: expiry || null,
       color_code: selected.color_code,
+      project: project.trim() || null,
       notes: notes.trim() || null,
     })
     setLoading(false)
@@ -125,6 +133,20 @@ export default function AddPaintModal({ types, existingPaints, onClose, onAdd, o
                 value={expiry}
                 onChange={e => setExpiry(e.target.value)}
               />
+            </div>
+
+            <div>
+              <label className="form-label">Proje Adı (opsiyonel)</label>
+              <input
+                className="form-input"
+                placeholder="Örn: Ada 3 Blok İnşaatı"
+                list="add-paint-project-list"
+                value={project}
+                onChange={e => setProject(e.target.value)}
+              />
+              <datalist id="add-paint-project-list">
+                {existingProjects.map(p => <option key={p} value={p!} />)}
+              </datalist>
             </div>
 
             <div>

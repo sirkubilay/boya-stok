@@ -9,10 +9,10 @@ import { getDb } from '@/lib/firebase'
 import {
   subscribePaints, subscribePaintTypes, subscribeProjectUsages,
   localAdd, localUpdate, localDelete, localEdit, localAddType, localDeleteType,
-  localAddUsage, localDeleteUsage,
+  localWithdraw, localDeleteUsage,
 } from '@/lib/localStore'
 import { isSameStock } from '@/lib/types'
-import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage, NewProjectUsage } from '@/lib/types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage } from '@/lib/types'
 import { brandLabel, groupByBrand, sortBrands, isPinnedBrand, totalsByUnit } from '@/lib/brands'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
@@ -21,7 +21,6 @@ import AddPaintModal from '@/components/AddPaintModal'
 import AdjustModal from '@/components/AdjustModal'
 import CatalogModal from '@/components/CatalogModal'
 import ProjectPanel from '@/components/ProjectPanel'
-import ProjectUsageModal from '@/components/ProjectUsageModal'
 
 // .trim() BOM/görünmez karakterleri de temizler
 const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL?.trim() === 'true'
@@ -64,7 +63,6 @@ export default function Home() {
   const [brandFilter, setBrandFilter] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showCatalog, setShowCatalog] = useState(false)
-  const [showUsageModal, setShowUsageModal] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
   const [sync, setSync] = useState<{ fromCache: boolean; pending: boolean }>({ fromCache: true, pending: false })
@@ -96,6 +94,7 @@ export default function Home() {
         id: d.id,
         type_id: null,
         brand: '',
+        project: null,
         ...d.data(),
         created_at: d.data().created_at?.toDate?.()?.toISOString() ?? '',
         updated_at: d.data().updated_at?.toDate?.()?.toISOString() ?? '',
@@ -168,11 +167,6 @@ export default function Home() {
 
   const groups = groupByBrand(displayList)
 
-  const projectNames = [...new Set(usages.map(u => u.project.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'))
-  const displayUsages = usages.filter(u =>
-    !search || u.project.toLowerCase().includes(search.toLowerCase()) || u.paint_name.toLowerCase().includes(search.toLowerCase())
-  )
-
   // Firestore yazma işlemini sarar. Hata olursa görünür uyarı verir + false döner.
   // Çevrimdışıysa yazma cihazda kuyruğa alınır; 6 sn içinde ack gelmezse "kuyrukta" kabul edip devam ederiz.
   async function runWrite(label: string, fn: () => void | Promise<void>): Promise<boolean> {
@@ -217,12 +211,34 @@ export default function Home() {
     return ok
   }
 
-  async function handleAdjust(id: string, delta: number): Promise<boolean> {
+  async function handleAdjust(id: string, delta: number, date?: string): Promise<boolean> {
     const paint = paints.find(p => p.id === id)
     if (!paint) return false
     const newQty = Math.max(0, paint.quantity + delta)
+    // Projeye bağlı bir boyadan çıkış yapılıyorsa, stok güncellemesiyle birlikte
+    // tarihli bir kullanım (çıkarım) kaydı da oluşturulur.
+    const logWithdrawal = delta < 0 && !!paint.project
     const ok = await runWrite('Miktar güncellenemedi', async () => {
-      if (USE_LOCAL) return localUpdate(id, newQty)
+      if (USE_LOCAL) {
+        if (logWithdrawal) return localWithdraw(id, -delta, date || TODAY)
+        return localUpdate(id, newQty)
+      }
+      if (logWithdrawal) {
+        const batch = writeBatch(getDb())
+        batch.update(doc(getDb(), 'paints', id), { quantity: newQty, updated_at: serverTimestamp() })
+        batch.set(doc(collection(getDb(), 'project_usages')), {
+          project: paint.project,
+          paint_id: paint.id,
+          paint_name: paint.name,
+          brand: paint.brand,
+          unit: paint.unit,
+          quantity: -delta,
+          date: date || TODAY,
+          created_at: serverTimestamp(),
+        })
+        await batch.commit()
+        return
+      }
       await updateDoc(doc(getDb(), 'paints', id), { quantity: newQty, updated_at: serverTimestamp() })
     })
     if (ok) await recordUpdate()
@@ -250,26 +266,6 @@ export default function Home() {
       if (USE_LOCAL) return localDeleteType(id)
       await deleteDoc(doc(getDb(), 'paint_types', id))
     })
-  }
-
-  async function handleAddUsage(usage: NewProjectUsage): Promise<boolean> {
-    const paint = paints.find(p => p.id === usage.paint_id)
-    if (!paint) return false
-    const ok = await runWrite('Kullanım kaydedilemedi', async () => {
-      if (USE_LOCAL) return localAddUsage(usage)
-      const batch = writeBatch(getDb())
-      batch.update(doc(getDb(), 'paints', usage.paint_id), {
-        quantity: Math.max(0, paint.quantity - usage.quantity),
-        updated_at: serverTimestamp(),
-      })
-      batch.set(doc(collection(getDb(), 'project_usages')), {
-        ...usage,
-        created_at: serverTimestamp(),
-      })
-      await batch.commit()
-    })
-    if (ok) await recordUpdate()
-    return ok
   }
 
   async function handleDeleteUsage(usage: ProjectUsage) {
@@ -392,11 +388,6 @@ export default function Home() {
           <button onClick={() => setShowCatalog(true)} className="btn-secondary text-sm">
             Boya Tanımları ({types.length})
           </button>
-          {view === 'project' && (
-            <button onClick={() => setShowUsageModal(true)} className="btn-secondary">
-              + Kullanım Ekle
-            </button>
-          )}
           <button onClick={() => setShowAddModal(true)} className="btn-primary">
             + Boya Ekle
           </button>
@@ -424,7 +415,7 @@ export default function Home() {
         )}
 
         {view === 'project' ? (
-          <ProjectPanel usages={displayUsages} onDelete={handleDeleteUsage} />
+          <ProjectPanel paints={paints} usages={usages} onAdjust={setAdjustTarget} onDeleteUsage={handleDeleteUsage} />
         ) : displayList.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">🎨</div>
@@ -526,14 +517,6 @@ export default function Home() {
           onClose={() => setAdjustTarget(null)}
           onAdjust={handleAdjust}
           onEdit={handleEditMeta}
-        />
-      )}
-      {showUsageModal && (
-        <ProjectUsageModal
-          paints={paints}
-          existingProjects={projectNames}
-          onClose={() => setShowUsageModal(false)}
-          onAdd={handleAddUsage}
         />
       )}
     </main>

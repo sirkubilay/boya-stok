@@ -1,4 +1,4 @@
-import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage, NewProjectUsage } from './types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage } from './types'
 import { isSameStock } from './types'
 
 const KEY = 'boya-stok-paints'
@@ -116,18 +116,33 @@ export function subscribeProjectUsages(callback: (usages: ProjectUsage[]) => voi
   return () => window.removeEventListener(EVENT, handler)
 }
 
-/** Proje kullanımı kaydı: stoktan düşer ve kullanım kaydı oluşturur. */
-export function localAddUsage(usage: NewProjectUsage): void {
+/**
+ * Projeye bağlı bir boyadan çıkış yapıldığında: stoktan düşer ve
+ * tarihli bir kullanım (çıkarım) kaydı oluşturur.
+ */
+export function localWithdraw(id: string, amount: number, date: string): void {
   const paints = getAll()
-  const paint = paints.find(p => p.id === usage.paint_id)
-  if (paint) {
-    paint.quantity = Math.max(0, paint.quantity - usage.quantity)
-    paint.updated_at = new Date().toISOString()
-    saveAll(paints)
+  const paint = paints.find(p => p.id === id)
+  if (!paint) return
+  const newQty = Math.max(0, paint.quantity - amount)
+  paint.quantity = newQty
+  paint.updated_at = new Date().toISOString()
+  saveAll(paints)
+  if (paint.project) {
+    const usages = getUsages()
+    usages.push({
+      id: crypto.randomUUID(),
+      project: paint.project,
+      paint_id: paint.id,
+      paint_name: paint.name,
+      brand: paint.brand,
+      unit: paint.unit,
+      quantity: amount,
+      date,
+      created_at: new Date().toISOString(),
+    })
+    saveUsages(usages)
   }
-  const usages = getUsages()
-  usages.push({ ...usage, id: crypto.randomUUID(), created_at: new Date().toISOString() })
-  saveUsages(usages)
 }
 
 /** Kullanım kaydını siler ve miktarı stoğa geri ekler. */

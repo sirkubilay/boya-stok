@@ -46,7 +46,10 @@ export default function PaintTable({ groups, expired, onRowClick }: Props) {
                   onClick={() => onRowClick(p)}
                   className="border-t border-gray-100 hover:bg-red-50/40 cursor-pointer transition-colors"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {p.name}
+                    {p.project && <span className="block text-[11px] font-normal text-gray-400">📁 {p.project}</span>}
+                  </td>
                   <td className="px-4 py-3 text-gray-600">
                     <span className="inline-flex items-center gap-2">
                       {p.color_code && p.color_code.startsWith('#') && (

@@ -6,13 +6,16 @@ import type { Paint, PaintMeta } from '@/lib/types'
 interface Props {
   paint: Paint
   onClose: () => void
-  onAdjust: (id: string, delta: number) => Promise<boolean>
+  onAdjust: (id: string, delta: number, date?: string) => Promise<boolean>
   onEdit: (id: string, fields: PaintMeta) => Promise<boolean>
 }
+
+const TODAY = new Date().toISOString().split('T')[0]
 
 export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props) {
   const [mode, setMode] = useState<'add' | 'remove'>('add')
   const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(TODAY)
   const [name, setName] = useState(paint.name)
   const [brand, setBrand] = useState(paint.brand || '')
   const [loading, setLoading] = useState(false)
@@ -28,6 +31,7 @@ export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props)
     if (!name.trim()) return setError('Boya adı boş olamaz.')
     if (isNaN(parsed) || parsed <= 0) return setError('Geçerli bir miktar girin.')
     if (mode === 'remove' && parsed > paint.quantity) return setError(`Maksimum ${paint.quantity} ${paint.unit} çıkarabilirsiniz.`)
+    if (mode === 'remove' && paint.project && !date) return setError('Çıkış tarihi seçin.')
 
     setLoading(true)
     const meta: PaintMeta = {}
@@ -36,7 +40,7 @@ export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props)
     let ok = true
     if (Object.keys(meta).length > 0) ok = await onEdit(paint.id, meta)
     const delta = mode === 'add' ? parsed : -parsed
-    if (ok) ok = await onAdjust(paint.id, delta)
+    if (ok) ok = await onAdjust(paint.id, delta, mode === 'remove' ? date : undefined)
     setLoading(false)
     if (ok) onClose()
     else setError('Kaydedilemedi — internet bağlantısını kontrol edip tekrar dene.')
@@ -70,10 +74,16 @@ export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props)
         </div>
 
         {(paint.color_code || paint.expiry_date) && (
-          <p className="text-xs text-gray-400 mb-3">
+          <p className="text-xs text-gray-400 mb-1">
             {paint.color_code && <>Renk: {paint.color_code}</>}
             {paint.color_code && paint.expiry_date && ' · '}
             {paint.expiry_date && <>SKT: {new Date(paint.expiry_date).toLocaleDateString('tr-TR')}</>}
+          </p>
+        )}
+
+        {paint.project && (
+          <p className="text-xs text-gray-500 mb-3 inline-flex items-center gap-1 bg-gray-100 rounded-full px-2 py-1">
+            📁 {paint.project}
           </p>
         )}
 
@@ -115,6 +125,18 @@ export default function AdjustModal({ paint, onClose, onAdjust, onEdit }: Props)
               autoFocus
             />
           </div>
+
+          {mode === 'remove' && paint.project && (
+            <div>
+              <label className="form-label">Çıkış Tarihi</label>
+              <input
+                className="form-input"
+                type="date"
+                value={date}
+                onChange={e => { setDate(e.target.value); setError('') }}
+              />
+            </div>
+          )}
 
           {amount && !isNaN(parsed) && parsed > 0 && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
