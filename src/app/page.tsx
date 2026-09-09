@@ -63,6 +63,16 @@ export default function Home() {
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
   const [sync, setSync] = useState<{ fromCache: boolean; pending: boolean }>({ fromCache: true, pending: false })
+  const [collapsedBrands, setCollapsedBrands] = useState<Set<string>>(new Set())
+
+  function toggleBrandCollapse(brand: string) {
+    setCollapsedBrands(prev => {
+      const next = new Set(prev)
+      if (next.has(brand)) next.delete(brand)
+      else next.add(brand)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (USE_LOCAL) {
@@ -367,26 +377,36 @@ export default function Home() {
             {groups.map(({ brand, items }) => {
               const pinned = isPinnedBrand(brand)
               const unitTotals = totalsByUnit(items)
+              const collapsed = collapsedBrands.has(brand)
               return (
                 <section key={brand || '—'} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-                  <div className={`flex items-center justify-between px-4 py-2.5 text-white ${pinned ? 'bg-red-700' : 'bg-gray-900'}`}>
+                  <button
+                    type="button"
+                    onClick={() => toggleBrandCollapse(brand)}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 text-white cursor-pointer ${pinned ? 'bg-red-700' : 'bg-gray-900'}`}
+                  >
                     <div className="flex items-center gap-2 min-w-0">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-white/70 transition-transform ${collapsed ? '-rotate-90' : ''}`}>
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
                       <span className="text-sm font-bold uppercase tracking-wider truncate">{brandLabel(brand)}</span>
                       <span className="text-[11px] text-white/60 shrink-0">{items.length} çeşit</span>
                     </div>
                     <span className="text-xs font-semibold text-white/90 shrink-0">{unitTotals}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-gray-50">
-                    {items.map(paint => (
-                      <PaintCard
-                        key={paint.id}
-                        paint={paint}
-                        expired={activeTab === 'expired'}
-                        onAdjust={() => setAdjustTarget(paint)}
-                        onDelete={() => handleDelete(paint.id)}
-                      />
-                    ))}
-                  </div>
+                  </button>
+                  {!collapsed && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-gray-50">
+                      {items.map(paint => (
+                        <PaintCard
+                          key={paint.id}
+                          paint={paint}
+                          expired={activeTab === 'expired'}
+                          onAdjust={() => setAdjustTarget(paint)}
+                          onDelete={() => handleDelete(paint.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </section>
               )
             })}
