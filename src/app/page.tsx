@@ -392,15 +392,14 @@ export default function Home() {
           <button onClick={() => setShowCatalog(true)} className="btn-secondary text-sm">
             Boya Tanımları ({types.length})
           </button>
-          {view === 'project' ? (
-            <button onClick={() => setShowUsageModal(true)} className="btn-primary">
+          {view === 'project' && (
+            <button onClick={() => setShowUsageModal(true)} className="btn-secondary">
               + Kullanım Ekle
             </button>
-          ) : (
-            <button onClick={() => setShowAddModal(true)} className="btn-primary">
-              + Boya Ekle
-            </button>
           )}
+          <button onClick={() => setShowAddModal(true)} className="btn-primary">
+            + Boya Ekle
+          </button>
         </div>
 
         {/* Marka filtresi */}
