@@ -26,6 +26,20 @@ export type NewPaint = Omit<Paint, 'id' | 'created_at' | 'updated_at'>
 
 export type PaintMeta = Partial<Pick<Paint, 'name' | 'brand' | 'color_code' | 'expiry_date'>>
 
+export interface ProjectUsage {
+  id: string
+  project: string
+  paint_id: string
+  paint_name: string
+  brand: string
+  unit: string
+  quantity: number
+  date: string
+  created_at: string
+}
+
+export type NewProjectUsage = Omit<ProjectUsage, 'id' | 'created_at'>
+
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLocaleLowerCase('tr')
 
 /**

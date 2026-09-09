@@ -3,15 +3,16 @@
 import { useState, useEffect } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, query, orderBy, increment
+  doc, setDoc, serverTimestamp, query, orderBy, increment, writeBatch
 } from 'firebase/firestore'
 import { getDb } from '@/lib/firebase'
 import {
-  subscribePaints, subscribePaintTypes,
+  subscribePaints, subscribePaintTypes, subscribeProjectUsages,
   localAdd, localUpdate, localDelete, localEdit, localAddType, localDeleteType,
+  localAddUsage, localDeleteUsage,
 } from '@/lib/localStore'
 import { isSameStock } from '@/lib/types'
-import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType } from '@/lib/types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage, NewProjectUsage } from '@/lib/types'
 import { brandLabel, groupByBrand, sortBrands, isPinnedBrand, totalsByUnit } from '@/lib/brands'
 import Header from '@/components/Header'
 import PaintCard from '@/components/PaintCard'
@@ -19,6 +20,8 @@ import PaintTable from '@/components/PaintTable'
 import AddPaintModal from '@/components/AddPaintModal'
 import AdjustModal from '@/components/AdjustModal'
 import CatalogModal from '@/components/CatalogModal'
+import ProjectPanel from '@/components/ProjectPanel'
+import ProjectUsageModal from '@/components/ProjectUsageModal'
 
 // .trim() BOM/görünmez karakterleri de temizler
 const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL?.trim() === 'true'
@@ -53,20 +56,23 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 export default function Home() {
   const [paints, setPaints] = useState<Paint[]>([])
   const [types, setTypes] = useState<PaintType[]>([])
+  const [usages, setUsages] = useState<ProjectUsage[]>([])
   const [firebaseError, setFirebaseError] = useState('')
   const [lastUpdated, setLastUpdated] = useState('')
   const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active')
-  const [view, setView] = useState<'card' | 'table'>('card')
+  const [view, setView] = useState<'card' | 'table' | 'project'>('card')
   const [brandFilter, setBrandFilter] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showCatalog, setShowCatalog] = useState(false)
+  const [showUsageModal, setShowUsageModal] = useState(false)
   const [adjustTarget, setAdjustTarget] = useState<Paint | null>(null)
   const [search, setSearch] = useState('')
   const [sync, setSync] = useState<{ fromCache: boolean; pending: boolean }>({ fromCache: true, pending: false })
-  const [collapsedBrands, setCollapsedBrands] = useState<Set<string>>(new Set())
+  // Markalar başlangıçta kapalı gelir; açılanlar burada tutulur.
+  const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set())
 
   function toggleBrandCollapse(brand: string) {
-    setCollapsedBrands(prev => {
+    setExpandedBrands(prev => {
       const next = new Set(prev)
       if (next.has(brand)) next.delete(brand)
       else next.add(brand)
@@ -80,7 +86,8 @@ export default function Home() {
       if (saved) setLastUpdated(saved)
       const unsubP = subscribePaints(setPaints)
       const unsubT = subscribePaintTypes(setTypes)
-      return () => { unsubP(); unsubT() }
+      const unsubU = subscribeProjectUsages(setUsages)
+      return () => { unsubP(); unsubT(); unsubU() }
     }
 
     const q = query(collection(getDb(), 'paints'), orderBy('name'))
@@ -119,7 +126,18 @@ export default function Home() {
       }
     })
 
-    return () => { unsubPaints(); unsubTypes(); unsubMeta() }
+    const unsubUsages = onSnapshot(
+      query(collection(getDb(), 'project_usages'), orderBy('date', 'desc')),
+      (snapshot) => {
+        setUsages(snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+          created_at: d.data().created_at?.toDate?.()?.toISOString() ?? '',
+        })) as ProjectUsage[])
+      },
+    )
+
+    return () => { unsubPaints(); unsubTypes(); unsubMeta(); unsubUsages() }
   }, [])
 
   async function recordUpdate() {
@@ -149,6 +167,11 @@ export default function Home() {
     .filter(p => !brandFilter || (p.brand?.trim() || '') === brandFilter)
 
   const groups = groupByBrand(displayList)
+
+  const projectNames = [...new Set(usages.map(u => u.project.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'))
+  const displayUsages = usages.filter(u =>
+    !search || u.project.toLowerCase().includes(search.toLowerCase()) || u.paint_name.toLowerCase().includes(search.toLowerCase())
+  )
 
   // Firestore yazma işlemini sarar. Hata olursa görünür uyarı verir + false döner.
   // Çevrimdışıysa yazma cihazda kuyruğa alınır; 6 sn içinde ack gelmezse "kuyrukta" kabul edip devam ederiz.
@@ -227,6 +250,44 @@ export default function Home() {
       if (USE_LOCAL) return localDeleteType(id)
       await deleteDoc(doc(getDb(), 'paint_types', id))
     })
+  }
+
+  async function handleAddUsage(usage: NewProjectUsage): Promise<boolean> {
+    const paint = paints.find(p => p.id === usage.paint_id)
+    if (!paint) return false
+    const ok = await runWrite('Kullanım kaydedilemedi', async () => {
+      if (USE_LOCAL) return localAddUsage(usage)
+      const batch = writeBatch(getDb())
+      batch.update(doc(getDb(), 'paints', usage.paint_id), {
+        quantity: Math.max(0, paint.quantity - usage.quantity),
+        updated_at: serverTimestamp(),
+      })
+      batch.set(doc(collection(getDb(), 'project_usages')), {
+        ...usage,
+        created_at: serverTimestamp(),
+      })
+      await batch.commit()
+    })
+    if (ok) await recordUpdate()
+    return ok
+  }
+
+  async function handleDeleteUsage(usage: ProjectUsage) {
+    if (!confirm(`"${usage.project}" projesindeki bu kullanım kaydı silinsin mi? ${usage.quantity} ${usage.unit} stoğa geri eklenecek.`)) return
+    const paint = paints.find(p => p.id === usage.paint_id)
+    const ok = await runWrite('Kullanım silinemedi', async () => {
+      if (USE_LOCAL) return localDeleteUsage(usage.id)
+      const batch = writeBatch(getDb())
+      if (paint) {
+        batch.update(doc(getDb(), 'paints', usage.paint_id), {
+          quantity: paint.quantity + usage.quantity,
+          updated_at: serverTimestamp(),
+        })
+      }
+      batch.delete(doc(getDb(), 'project_usages', usage.id))
+      await batch.commit()
+    })
+    if (ok) await recordUpdate()
   }
 
   async function handleDelete(id: string) {
@@ -320,17 +381,30 @@ export default function Home() {
             >
               Tablo
             </button>
+            <button
+              onClick={() => setView('project')}
+              className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${view === 'project' ? 'bg-black text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              aria-label="Proje görünümü"
+            >
+              Proje
+            </button>
           </div>
           <button onClick={() => setShowCatalog(true)} className="btn-secondary text-sm">
             Boya Tanımları ({types.length})
           </button>
-          <button onClick={() => setShowAddModal(true)} className="btn-primary">
-            + Boya Ekle
-          </button>
+          {view === 'project' ? (
+            <button onClick={() => setShowUsageModal(true)} className="btn-primary">
+              + Kullanım Ekle
+            </button>
+          ) : (
+            <button onClick={() => setShowAddModal(true)} className="btn-primary">
+              + Boya Ekle
+            </button>
+          )}
         </div>
 
         {/* Marka filtresi */}
-        {brands.length > 0 && (
+        {view !== 'project' && brands.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
             <button
               onClick={() => setBrandFilter('')}
@@ -350,7 +424,9 @@ export default function Home() {
           </div>
         )}
 
-        {displayList.length === 0 ? (
+        {view === 'project' ? (
+          <ProjectPanel usages={displayUsages} onDelete={handleDeleteUsage} />
+        ) : displayList.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">🎨</div>
             {search || brandFilter ? (
@@ -377,7 +453,7 @@ export default function Home() {
             {groups.map(({ brand, items }) => {
               const pinned = isPinnedBrand(brand)
               const unitTotals = totalsByUnit(items)
-              const collapsed = collapsedBrands.has(brand)
+              const collapsed = !expandedBrands.has(brand)
               return (
                 <section key={brand || '—'} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                   <button
@@ -451,6 +527,14 @@ export default function Home() {
           onClose={() => setAdjustTarget(null)}
           onAdjust={handleAdjust}
           onEdit={handleEditMeta}
+        />
+      )}
+      {showUsageModal && (
+        <ProjectUsageModal
+          paints={paints}
+          existingProjects={projectNames}
+          onClose={() => setShowUsageModal(false)}
+          onAdd={handleAddUsage}
         />
       )}
     </main>

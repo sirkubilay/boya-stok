@@ -1,8 +1,9 @@
-import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType } from './types'
+import type { Paint, NewPaint, PaintMeta, PaintType, NewPaintType, ProjectUsage, NewProjectUsage } from './types'
 import { isSameStock } from './types'
 
 const KEY = 'boya-stok-paints'
 const TYPES_KEY = 'boya-stok-types'
+const USAGES_KEY = 'boya-stok-usages'
 const EVENT = 'boya-stok-update'
 
 function read<T>(key: string): T[] {
@@ -23,6 +24,8 @@ const getAll = () => read<Paint>(KEY)
 const saveAll = (p: Paint[]) => write(KEY, p)
 const getTypes = () => read<PaintType>(TYPES_KEY)
 const saveTypes = (t: PaintType[]) => write(TYPES_KEY, t)
+const getUsages = () => read<ProjectUsage>(USAGES_KEY)
+const saveUsages = (u: ProjectUsage[]) => write(USAGES_KEY, u)
 
 function sortPaints(paints: Paint[]): Paint[] {
   return [...paints].sort((a, b) => {
@@ -104,4 +107,41 @@ export function localEditType(id: string, fields: Partial<NewPaintType>): void {
 
 export function localDeleteType(id: string): void {
   saveTypes(getTypes().filter(t => t.id !== id))
+}
+
+export function subscribeProjectUsages(callback: (usages: ProjectUsage[]) => void): () => void {
+  const handler = () => callback(getUsages())
+  window.addEventListener(EVENT, handler)
+  handler()
+  return () => window.removeEventListener(EVENT, handler)
+}
+
+/** Proje kullanımı kaydı: stoktan düşer ve kullanım kaydı oluşturur. */
+export function localAddUsage(usage: NewProjectUsage): void {
+  const paints = getAll()
+  const paint = paints.find(p => p.id === usage.paint_id)
+  if (paint) {
+    paint.quantity = Math.max(0, paint.quantity - usage.quantity)
+    paint.updated_at = new Date().toISOString()
+    saveAll(paints)
+  }
+  const usages = getUsages()
+  usages.push({ ...usage, id: crypto.randomUUID(), created_at: new Date().toISOString() })
+  saveUsages(usages)
+}
+
+/** Kullanım kaydını siler ve miktarı stoğa geri ekler. */
+export function localDeleteUsage(id: string): void {
+  const usages = getUsages()
+  const usage = usages.find(u => u.id === id)
+  if (usage) {
+    const paints = getAll()
+    const paint = paints.find(p => p.id === usage.paint_id)
+    if (paint) {
+      paint.quantity += usage.quantity
+      paint.updated_at = new Date().toISOString()
+      saveAll(paints)
+    }
+  }
+  saveUsages(usages.filter(u => u.id !== id))
 }
