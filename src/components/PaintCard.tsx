@@ -16,102 +16,63 @@ function daysUntilExpiry(expiry_date: string): number {
   return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-function ExpiryBadge({ expiry_date }: { expiry_date: string | null }) {
-  if (!expiry_date) return <span className="text-xs text-gray-400">Son kullanma tarihi yok</span>
-
+function expiryInfo(expiry_date: string | null): { text: string; className: string } | null {
+  if (!expiry_date) return null
   const days = daysUntilExpiry(expiry_date)
   const dateStr = new Date(expiry_date).toLocaleDateString('tr-TR')
-
-  if (days < 0) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block shrink-0" />
-        {Math.abs(days)} gün önce geçti · {dateStr}
-      </span>
-    )
-  }
-  if (days <= 30) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-medium">
-        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 inline-block shrink-0" />
-        {days} gün kaldı · {dateStr}
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block shrink-0" />
-      {dateStr}
-    </span>
-  )
+  if (days < 0) return { text: `${Math.abs(days)} gün önce geçti · ${dateStr}`, className: 'text-red-600 font-medium' }
+  if (days <= 30) return { text: `${days} gün kaldı · ${dateStr}`, className: 'text-yellow-700 font-medium' }
+  return { text: dateStr, className: 'text-gray-400' }
 }
 
 export default function PaintCard({ paint, onAdjust, onDelete, expired }: Props) {
+  const expiry = expiryInfo(paint.expiry_date)
+  const metaParts: React.ReactNode[] = []
+  if (expiry) metaParts.push(<span key="expiry" className={expiry.className}>{expiry.text}</span>)
+  if (paint.color_code && !paint.color_code.startsWith('#')) metaParts.push(<span key="color">{paint.color_code}</span>)
+  if (paint.project) metaParts.push(<span key="project">📁 {paint.project}</span>)
+  if (paint.notes) metaParts.push(<span key="notes">{paint.notes}</span>)
+
   return (
-    <div className={`card p-4 flex flex-col gap-3 active:scale-[0.98] transition-transform ${expired ? 'opacity-80 border-red-200 bg-red-50/20' : ''}`}>
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {paint.color_code && paint.color_code.startsWith('#') && (
-            <div
-              className="w-6 h-6 rounded-full shrink-0 border-2 border-white shadow"
-              style={{ backgroundColor: paint.color_code }}
-            />
-          )}
-          <div className="min-w-0">
-            {paint.brand && (
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 leading-tight">{paint.brand}</p>
-            )}
-            <h3 className="font-semibold text-gray-900 text-sm leading-snug">{paint.name}</h3>
-            {paint.color_code && !paint.color_code.startsWith('#') && (
-              <p className="text-[11px] text-gray-400 leading-tight">{paint.color_code}</p>
-            )}
-          </div>
-        </div>
-        {/* Delete — minimum 44x44 touch target */}
-        <button
-          onClick={onDelete}
-          className="w-9 h-9 flex items-center justify-center text-gray-300 hover:text-red-500 active:text-red-600 transition-colors rounded-lg hover:bg-red-50 shrink-0 cursor-pointer"
-          aria-label="Sil"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
-          </svg>
-        </button>
-      </div>
-
-      {/* Quantity row */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <span className={`text-3xl font-bold tabular-nums ${paint.quantity === 0 ? 'text-red-600' : 'text-gray-900'}`}>
-            {paint.quantity % 1 === 0 ? paint.quantity : paint.quantity.toFixed(1)}
-          </span>
-          <span className="text-sm text-gray-500 ml-1.5">{paint.unit}</span>
-          {paint.quantity === 0 && (
-            <p className="text-xs text-red-500 font-semibold mt-0.5">Stok tükendi</p>
-          )}
-        </div>
-        {/* Update button — big touch target */}
-        <button
-          onClick={onAdjust}
-          className="btn-primary text-sm min-w-[90px] h-11"
-        >
-          Güncelle
-        </button>
-      </div>
-
-      {paint.notes && (
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 line-clamp-1">{paint.notes}</p>
+    <li className={`flex items-center gap-3 px-3 py-2.5 hover:bg-white transition-colors ${expired ? 'bg-red-50/40' : ''}`}>
+      {paint.color_code && paint.color_code.startsWith('#') && (
+        <span
+          className="w-4 h-4 rounded-full shrink-0 border border-gray-300"
+          style={{ backgroundColor: paint.color_code }}
+        />
       )}
-
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <ExpiryBadge expiry_date={paint.expiry_date} />
-        {paint.project && (
-          <span className="text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-1 truncate max-w-full">
-            📁 {paint.project}
-          </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-gray-900 truncate">
+          {paint.name}
+          {paint.brand && <span className="text-gray-400 font-normal"> · {paint.brand}</span>}
+        </p>
+        {metaParts.length > 0 && (
+          <p className="text-[11px] text-gray-400 truncate">
+            {metaParts.map((part, i) => (
+              <span key={i}>{i > 0 && ' · '}{part}</span>
+            ))}
+          </p>
         )}
       </div>
-    </div>
+      <span className={`text-sm font-bold tabular-nums shrink-0 ${paint.quantity === 0 ? 'text-red-600' : 'text-gray-900'}`}>
+        {paint.quantity % 1 === 0 ? paint.quantity : paint.quantity.toFixed(1)}
+        <span className="text-xs font-normal text-gray-500 ml-1">{paint.unit}</span>
+      </span>
+      <button
+        onClick={onAdjust}
+        className="btn-primary text-xs h-8 px-3 shrink-0"
+      >
+        Güncelle
+      </button>
+      <button
+        onClick={onDelete}
+        className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-red-500 active:text-red-600 transition-colors rounded-lg hover:bg-red-50 shrink-0 cursor-pointer"
+        aria-label="Sil"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+        </svg>
+      </button>
+    </li>
   )
 }

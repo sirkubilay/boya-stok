@@ -461,7 +461,7 @@ export default function Home() {
                     <span className="text-xs font-semibold text-white/90 shrink-0">{unitTotals}</span>
                   </button>
                   {!collapsed && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-gray-50">
+                    <ul className="divide-y divide-gray-100 bg-gray-50">
                       {items.map(paint => (
                         <PaintCard
                           key={paint.id}
@@ -471,7 +471,7 @@ export default function Home() {
                           onDelete={() => handleDelete(paint.id)}
                         />
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </section>
               )
